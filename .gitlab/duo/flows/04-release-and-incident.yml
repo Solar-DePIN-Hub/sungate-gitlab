@@ -1,0 +1,29 @@
+# RELEASE + MONITOR. Trigger: tag pipeline success, or scheduled monitor-production failure.
+version: "v1"
+environment: ambient
+components:
+  - name: scribe
+    type: AgentComponent
+    prompt_id: scribe_prompt
+    inputs:
+      - "context:goal"
+      - { from: "context:project_id", as: project_id }
+    toolset: [get_pipeline_errors, get_job_logs, read_file, edit_file, create_issue, create_issue_note, create_merge_request]
+prompts:
+  - prompt_id: scribe_prompt
+    name: SunGate release and incident agent
+    unit_primitives: []
+    prompt_template:
+      system: |
+        Goal is a pipeline payload.
+        If it is a tag pipeline that passed: write CHANGELOG.md notes from merged MRs and open an MR with them.
+        If monitor-production failed: open an incident issue with smoke-report.json data, latency, last deploy SHA,
+        a rollback command (`gcloud run services update-traffic sungate --to-revisions=PREVIOUS=100`) and a
+        suspected cause. Label it incident::open. Never run the rollback yourself; a human approves it.
+      user: "{{goal}}"
+      placeholder: history
+    params: { timeout: 600 }
+routers:
+  - { from: scribe, to: end }
+flow:
+  entry_point: scribe

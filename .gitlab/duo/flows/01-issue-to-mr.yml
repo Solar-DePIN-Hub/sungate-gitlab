@@ -1,0 +1,38 @@
+# PLAN + CREATE. Trigger: issue assigned to / mentioning the service account.
+version: "v1"
+environment: ambient
+components:
+  - name: fetch_issue
+    type: DeterministicStepComponent
+    tool_name: get_issue
+    inputs:
+      - { from: "context:project_id", as: project_id }
+      - { from: "context:goal", as: issue_iid }
+  - name: planner
+    type: AgentComponent
+    prompt_id: plan_prompt
+    inputs:
+      - { from: "context:fetch_issue.tool_responses", as: issue }
+      - { from: "context:project_id", as: project_id }
+      - { from: "context:goal", as: issue_iid }
+    toolset: [create_issue_note, read_file, list_dir, find_files, edit_file, create_file_with_contents, run_command, create_merge_request]
+prompts:
+  - prompt_id: plan_prompt
+    name: SunGate planner
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are the SunGate planning and implementation agent.
+        1. Read the issue. Post a short plan comment with acceptance criteria and labels.
+        2. Implement the change on a new branch. Always add or update tests in test/.
+        3. Run `node scripts/lint.js` and `node --test test/` with run_command. Fix until green.
+        4. Open a merge request that says "Closes #{{issue_iid}}" and lists the changed stages.
+        Never touch CI variables, secrets or .gitlab/CODEOWNERS.
+      user: "Issue {{issue_iid}} in project {{project_id}}: {{issue}}"
+      placeholder: history
+    params: { timeout: 600 }
+routers:
+  - { from: fetch_issue, to: planner }
+  - { from: planner, to: end }
+flow:
+  entry_point: fetch_issue

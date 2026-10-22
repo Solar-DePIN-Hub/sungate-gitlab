@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SunGate</title>
+<style>body{font-family:system-ui;background:#0b1020;color:#eef;max-width:760px;margin:auto;padding:24px}h1{color:#ffd34d}input,button{padding:8px;border-radius:8px;border:0;margin:4px}button{background:#ffd34d;font-weight:700;cursor:pointer}.bar{background:#ffd34d;height:10px;border-radius:4px;margin:2px 0}small{color:#9ab}</style>
+<h1>☀️ SunGate</h1>
+<p>Solar output forecast API. Every release of this app is reviewed, scanned, tested, deployed and monitored by GitLab Duo agents, and heavy CI runs only in low-carbon windows.</p>
+<label>lat <input id="lat" value="50.45" size="6"></label><label>lon <input id="lon" value="30.52" size="6"></label>
+<button onclick="go()">Forecast 24h</button>
+<div id="out"></div>
+<script>
+async function go(){const r=await fetch(`/api/forecast?lat=${lat.value}&lon=${lon.value}`);const d=await r.json();
+if(d.error){out.textContent=d.error;return}const m=Math.max(1,...d.hourly.map(h=>h.powerW));
+out.innerHTML=`<p><b>${d.energyWh} Wh</b> clear-sky for a ${d.areaM2} m² panel</p>`+d.hourly.map(h=>`<small>${h.time.slice(11,16)} UTC · ${h.powerW} W</small><div class="bar" style="width:${h.powerW/m*100}%"></div>`).join('')}
+go()
+</script></html>

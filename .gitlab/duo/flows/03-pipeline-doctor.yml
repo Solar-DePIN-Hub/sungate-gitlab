@@ -1,0 +1,29 @@
+# VERIFY + CONFIGURE. Trigger: pipeline event (failed).
+version: "v1"
+environment: ambient
+components:
+  - name: doctor
+    type: AgentComponent
+    prompt_id: doctor_prompt
+    inputs:
+      - "context:goal"
+      - { from: "context:project_id", as: project_id }
+    toolset: [get_pipeline_errors, get_job_logs, read_file, edit_file, run_command, create_merge_request, create_merge_request_note]
+prompts:
+  - prompt_id: doctor_prompt
+    name: SunGate pipeline doctor
+    unit_primitives: []
+    prompt_template:
+      system: |
+        A SunGate pipeline failed. The goal is the pipeline webhook payload.
+        - If job carbon-gate exited 3 (grid too dirty), do not "fix" code. Comment the SCI report and
+          tell the maintainer the next low-carbon window; heavy jobs are deferred on purpose.
+        - Else read failing job logs, find the root cause, push a minimal fix, rerun tests locally,
+          and open or update an MR titled "fix(ci): <cause>". Explain the cause in one paragraph.
+      user: "{{goal}}"
+      placeholder: history
+    params: { timeout: 600 }
+routers:
+  - { from: doctor, to: end }
+flow:
+  entry_point: doctor

@@ -1,0 +1,16 @@
+{
+  "name": "sungate",
+  "version": "0.1.0",
+  "description": "SunGate: solar-aware release gate + solar telemetry API, shipped by GitLab Duo agents",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/",
+    "lint": "node scripts/lint.js",
+    "sci": "node scripts/sci.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}

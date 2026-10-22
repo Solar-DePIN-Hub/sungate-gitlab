@@ -1,0 +1,7 @@
+image: node:20-alpine
+setup_script:
+  - node --version
+network_policy:
+  include_recommended_allowed: true
+  allowed_domains:
+    - api.electricitymap.org
