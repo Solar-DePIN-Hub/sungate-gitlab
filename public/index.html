@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%98%80%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <title>SunGate · carbon-aware path to production</title>
 <meta name="description" content="SunGate forecasts solar output and the next low-carbon grid window. Its own GitLab pipeline uses the same code to decide when heavy CI work runs.">
 <style>
@@ -34,7 +35,8 @@ a{color:var(--sun)}
       <h2 id="pv">Solar forecast (clear sky)</h2>
       <label>lat <input id="lat" value="50.45" inputmode="decimal"></label>
       <label>lon <input id="lon" value="30.52" inputmode="decimal"></label>
-      <label>panel m² <input id="area" value="1.6" inputmode="decimal"></label><br>
+      <label>panel m² <input id="area" value="1.6" inputmode="decimal"></label>
+      <label>tilt ° <input id="tilt" value="35" inputmode="decimal" title="0 = flat, 90 = vertical; faces the equator"></label><br>
       <button id="go">Forecast next 24h</button>
       <div id="pvout" aria-live="polite"></div>
     </section>
@@ -59,6 +61,10 @@ a{color:var(--sun)}
       <li><b>Monitor</b>: a scheduled probe checks this site; a failure becomes an incident issue with a rollback plan.</li>
     </ol>
     <p class="mut" id="sci"></p>
+    <p class="mut">Evidence: <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase">GitLab project</a> ·
+      <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/pipelines">pipelines</a> ·
+      <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/merge_requests/1">MR !1 written by the Issue to MR flow</a> ·
+      <span id="ver"></span></p>
   </section>
 </main>
 <script src="solar.js"></script>
@@ -70,10 +76,10 @@ function bars(values, cls, bestIdx) {
   return `<div class="bars ${cls||''}">` + values.map((v, i) => `<div class="${i===bestIdx?'best':''}" style="height:${(v/m*100).toFixed(1)}%" title="${v}"></div>`).join('') + '</div>';
 }
 function pv() {
-  const lat = Number($('lat').value), lon = Number($('lon').value), areaM2 = Number($('area').value);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !(areaM2 > 0)) { $('pvout').textContent = 'Enter lat -90..90, lon -180..180, area > 0'; return; }
-  const f = SunGateSolar.forecast({ lat, lon, areaM2, hours: 24 });
-  $('pvout').innerHTML = `<div class="big">${(f.energyWh/1000).toFixed(2)} kWh</div><div class="mut">next 24h, clear sky, ${f.areaM2} m² at 20% efficiency</div>` + bars(f.hourly.map(h => h.powerW));
+  const lat = Number($('lat').value), lon = Number($('lon').value), areaM2 = Number($('area').value), tilt = Number($('tilt').value || 0);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !(areaM2 > 0) || !(tilt >= 0 && tilt <= 90)) { $('pvout').textContent = 'Enter lat -90..90, lon -180..180, area > 0, tilt 0..90'; return; }
+  const f = SunGateSolar.forecast({ lat, lon, areaM2, hours: 24, tilt });
+  $('pvout').innerHTML = `<div class="big">${(f.energyWh/1000).toFixed(2)} kWh</div><div class="mut">next 24h, clear sky, ${f.areaM2} m² at 20% efficiency, tilted ${f.tilt}° toward the equator</div>` + bars(f.hourly.map(h => h.powerW));
 }
 async function gw() {
   const durationMin = Math.max(30, Math.min(720, Number($('dur').value) || 60));
@@ -91,6 +97,7 @@ $('go').onclick = pv; $('gwgo').onclick = gw; pv(); gw();
 fetch('sci-report.json').then(r => r.ok ? r.json() : null).then(r => {
   if (r && r.sci) $('sci').textContent = `Last pipeline: ${r.measured.pipelineMinutes} min, ${r.sci.SCI_g_per_run} gCO₂e (SCI). Running at the greenest window would emit ${r.greenest.SCI_g_per_run} g (${r.window24h.savingPct}% less).`;
 }).catch(() => {});
+fetch('version.json').then(r => r.ok ? r.json() : null).then(v => { if (v) $('ver').textContent = `deployed commit ${v.commit}, built ${v.builtAt.slice(0, 16).replace('T', ' ')} UTC`; }).catch(() => {});
 </script>
 </body>
 </html>

@@ -69,7 +69,11 @@ function forecast({ lat, lon, areaM2 = 1.6, efficiency = 0.2, start = new Date()
   return { lat, lon, areaM2, efficiency, tilt, energyWh: +out.reduce((a, p) => a + p.powerW, 0).toFixed(1), hourly: out };
 }
 
-const api = { pvPowerW, clearSkyIrradiance, solarElevation, solarAzimuth, tiltFactor, forecast };
-// Works in Node (API, tests) and in the browser (static GitLab Pages build) without a bundler.
-if (typeof module !== 'undefined' && module.exports) module.exports = api;
-else globalThis.SunGateSolar = api;
+// Block scope: the browser loads solar.js and carbon.js as classic scripts in one global scope,
+// so a top-level `const api` in both files would collide ("Identifier 'api' has already been declared").
+{
+  const api = { pvPowerW, clearSkyIrradiance, solarElevation, solarAzimuth, tiltFactor, forecast };
+  // Works in Node (API, tests) and in the browser (static GitLab Pages build) without a bundler.
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else globalThis.SunGateSolar = api;
+}
