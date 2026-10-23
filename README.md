@@ -1,38 +1,92 @@
-# ☀️ SunGate — solar-aware, agent-run path to production
+# ☀️ SunGate: a carbon-aware path to production, run by GitLab Duo flows
 
-**GitLab Transcend "Life After Code" hackathon · Path A: Start Fresh · Autonomy: Supervised**
+**GitLab AI Hackathon "Transcend" (Life After Code) · Path A: Start Fresh · Autonomy level: Supervised**
 
-SunGate is a tiny solar-output forecast API for small solar/DePIN operators.
-The real project is everything *after* the code: GitLab Duo Agent Platform flows plan, build, review,
-secure, fix, release and watch the app. A human approves only the production outcome.
-CI checks grid carbon first (SCI, ISO/IEC 21031) and defers heavy jobs when the grid is dirty.
+SunGate is a small API and web page for solar owners: it forecasts clear-sky solar output for any
+location and finds the next **low-carbon window** on the electricity grid (live GB grid data).
 
-## Stages covered (9/9)
-| Stage | What runs |
+The real project is what happens **after the code is written**. Four GitLab Duo Agent Platform flows
+plan, build, review, secure, repair, release and watch SunGate. The pipeline uses **the same carbon
+code that SunGate ships**: before heavy CI work (Docker build, container scan, staging), a carbon gate
+reads the live grid forecast and, for scheduled work, time-shifts it to a cleaner window.
+A human makes one decision: pressing play on the production job.
+
+```
+issue ──► [01 Issue→MR] plan + code + tests ──► MR ──► [02 MR Guardian] review + security fixes
+                                                          │
+                       pipeline: carbon gate ─► lint/test/governance ─► SAST/secrets/deps
+                                 └─► heavy child pipeline (time-shifted if the grid is dirty):
+                                     docker build ─► container scan ─► ephemeral staging + smoke
+                                                          │
+   failed ─► [03 Pipeline Doctor] fix MR / incident     passed ─► [04 Release Captain] readiness report
+                                                          │
+                                  HUMAN presses ▶ pages (production) ─► scheduled monitor every 30 min
+```
+
+## The 9 lifecycle stages
+
+| Stage | What does it (file) |
 |---|---|
-| plan | `01-issue-to-mr` flow: reads issue, posts plan + acceptance criteria |
-| create | same flow writes code + tests, opens MR |
-| verify | `lint`, `test` (JUnit), `03-pipeline-doctor` fixes failed pipelines |
-| package | `build-image` → GitLab Container Registry |
-| secure | SAST, Secret Detection, Dependency + Container Scanning; `02-mr-guardian` fixes high findings |
-| release | tag → `release` job; `04-release-and-incident` writes changelog MR |
-| configure | `.gitlab/duo/agent-config.yml`, Cloud Run config in `deploy/` |
-| monitor | `smoke-staging`, scheduled `monitor-production`; failure → incident issue with rollback |
-| govern | `governance-check` (MIT, CODEOWNERS), manual prod gate, carbon gate |
+| **Plan** | Flow `01-issue-to-mr`: *planner* agent posts a plan, acceptance criteria and risk on the issue |
+| **Create** | Same flow: *builder* agent writes code + tests, runs lint/tests/governance, opens the MR |
+| **Verify** | Jobs `lint`, `test` (JUnit + coverage), `governance`; flow `03-pipeline-doctor` diagnoses red pipelines and opens a fix MR (max 2 attempts, then hands over to a human) |
+| **Package** | Child pipeline `ci/heavy.yml`: `build-image` pushes to the GitLab Container Registry |
+| **Secure** | SAST, Secret Detection, Dependency Scanning (MR pipelines too), Container Scanning; flow `02-mr-guardian` reads the findings, fixes critical/high ones on the MR branch, posts a verdict |
+| **Release** | Flow `04-release-captain` posts a release-readiness report; manual `pages` job = production; tags create a GitLab Release |
+| **Configure** | `.gitlab/duo/agent-config.yml` (network policy for flows), `ci/heavy.yml` generated per run, `deploy/cloudrun.sh` |
+| **Monitor** | `staging-smoke` on an ephemeral staging container; scheduled `monitor-production` every 30 min; a failure → Pipeline Doctor opens an incident issue with a rollback plan |
+| **Govern** | `scripts/governance.js` (34 guardrail rules in CI), `AGENTS.md`, CODEOWNERS on all automation, manual production gate, carbon policy, audit events in the readiness report |
+
+## Carbon-aware CI (how the gate works)
+
+`scripts/carbon-gate.js` runs first in every pipeline and uses `src/carbon.js` (also used by the API):
+
+1. Fetches the 24 h forecast of grid carbon intensity (gCO₂e/kWh, half-hour slots) from the
+   National Grid ESO Carbon Intensity API (public, no key, CC BY 4.0).
+2. Finds the cleanest window for the heavy work within 6 h and within 24 h.
+3. Policy:
+   - **push / MR pipelines → `advise`**: never slows developers; reports the greener time.
+   - **scheduled pipelines → `enforce`**: if a window ≥ 30 % cleaner starts within 6 h, the heavy
+     child pipeline gets a GitLab `when: delayed` job, so Docker build, scans and staging start in
+     that window. Delayed jobs hold no runner while they wait.
+   - `[urgent]` in the commit title always runs now; if the grid API is down the gate fails open.
+4. `sci-report` computes Software Carbon Intensity per pipeline run from the **measured** pipeline
+   duration and the **live** grid intensity, and compares it with the greenest window.
+
+Details and numbers: [docs/SUSTAINABILITY.md](docs/SUSTAINABILITY.md).
+
+## API
+
+```
+GET /healthz
+GET /api/forecast?lat=50.45&lon=30.52&hours=24&area=1.6     # clear-sky PV forecast
+GET /api/green-window?duration=60&horizon=24                 # cleanest window on the GB grid
+```
+Invalid input returns HTTP 400. The web page runs the same `solar.js` and `carbon.js` in the browser,
+so the production site works as a static GitLab Pages site.
 
 ## Run locally
+
 ```
-npm test && npm run lint && npm start   # http://localhost:8080
+node --test test/*.test.js     # 31 tests, offline (real grid data fixture)
+node scripts/lint.js
+node scripts/governance.js
+node src/server.js             # http://localhost:8080
 ```
-API: `GET /api/forecast?lat=50.45&lon=30.52&hours=24`, `GET /healthz`.
+Zero npm dependencies. Node.js 22+ (CI and container use Node.js 24 LTS).
 
-## Duo setup
-1. Import flows from `.gitlab/duo/flows/` in Automate → Flows (AI Catalog), enable in project.
-2. Triggers: issue mention/assign → 01, MR reviewer → 02, pipeline failed → 03, tag/schedule → 04.
-3. CI vars for Google Cloud bonus: `GCP_PROJECT`, `GCP_REGION`, `GCP_SA_KEY` (file, masked), `STAGING_URL`, `PROD_URL`.
+## Duo Agent Platform setup
 
-## Sustainability
-`scripts/sci.js` computes SCI = (E × I + M) per pipeline run. Assumptions are env vars, not hidden.
-Cloud Run scales to zero (`--min-instances 0`), the image is node:20-alpine with zero npm deps.
+See [docs/SETUP.md](docs/SETUP.md): create the four flows from `.gitlab/duo/flows/`, add triggers,
+add the monitor schedule. Agents follow [AGENTS.md](AGENTS.md) and the skills in `skills/`.
 
-License: MIT.
+## Human in the loop (why "Supervised")
+
+Agents may open MRs, push fixes to MR branches, comment and open incidents. They may not merge,
+deploy to production, roll back, change CI variables, CODEOWNERS, LICENSE or guardrails, or dismiss
+vulnerabilities (`scripts/governance.js` fails the pipeline if a flow gets a destructive tool).
+Production is the manual `pages` job.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Grid data: National Grid ESO Carbon Intensity API, CC BY 4.0.

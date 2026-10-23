@@ -1,38 +1,101 @@
-# PLAN + CREATE. Trigger: issue assigned to / mentioning the service account.
+# SunGate flow 01 - Issue to MR (PLAN + CREATE)
+# Triggers: Assign (issue assigned to this flow's service account) and Mention.
+# Two agents: a planner that writes the plan on the issue, and a builder that implements, tests and opens the MR.
 version: "v1"
 environment: ambient
 components:
-  - name: fetch_issue
-    type: DeterministicStepComponent
-    tool_name: get_issue
-    inputs:
-      - { from: "context:project_id", as: project_id }
-      - { from: "context:goal", as: issue_iid }
   - name: planner
     type: AgentComponent
-    prompt_id: plan_prompt
+    prompt_id: sungate_planner
     inputs:
-      - { from: "context:fetch_issue.tool_responses", as: issue }
-      - { from: "context:project_id", as: project_id }
-      - { from: "context:goal", as: issue_iid }
-    toolset: [create_issue_note, read_file, list_dir, find_files, edit_file, create_file_with_contents, run_command, create_merge_request]
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+    toolset:
+      - get_issue
+      - get_work_item
+      - list_issue_notes
+      - read_file
+      - read_files
+      - list_dir
+      - find_files
+      - grep
+      - create_issue_note
+  - name: builder
+    type: AgentComponent
+    prompt_id: sungate_builder
+    inputs:
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+      - from: "context:planner.final_answer"
+        as: plan
+    toolset:
+      - read_file
+      - read_files
+      - list_dir
+      - find_files
+      - grep
+      - edit_file
+      - create_file_with_contents
+      - mkdir
+      - run_command
+      - create_branch
+      - create_commit
+      - create_merge_request
+      - create_issue_note
+      - ci_linter
 prompts:
-  - prompt_id: plan_prompt
+  - prompt_id: sungate_planner
     name: SunGate planner
     unit_primitives: []
     prompt_template:
       system: |
-        You are the SunGate planning and implementation agent.
-        1. Read the issue. Post a short plan comment with acceptance criteria and labels.
-        2. Implement the change on a new branch. Always add or update tests in test/.
-        3. Run `node scripts/lint.js` and `node --test test/` with run_command. Fix until green.
-        4. Open a merge request that says "Closes #{{issue_iid}}" and lists the changed stages.
-        Never touch CI variables, secrets or .gitlab/CODEOWNERS.
-      user: "Issue {{issue_iid}} in project {{project_id}}: {{issue}}"
-      placeholder: history
-    params: { timeout: 600 }
+        You are the planning agent of SunGate, a carbon-aware solar forecast API (Node.js 24 LTS, zero npm dependencies).
+        Read AGENTS.md first and follow it.
+        The goal tells you which issue started this flow (an issue URL, an IID, or a comment with "Context: {Issue IID: N}").
+        Steps:
+        1. Load the issue with get_issue (or get_work_item) and its notes.
+        2. Read the code it touches (src/, test/, scripts/, .gitlab-ci.yml).
+        3. Post ONE issue note titled "SunGate plan" with: summary, files to change, acceptance criteria as a checklist,
+           tests to add, DevSecOps stages touched, and risk (low/medium/high).
+        4. If the issue asks to change CI variables, secrets, CODEOWNERS, LICENSE or governance rules, say that a human
+           must do it and stop: your final answer must then start with "STOP:".
+        Your final answer is the plan in plain text, including the issue IID.
+      user: |
+        Project: {{project_id}}
+        Trigger: {{goal}}
+    params:
+      timeout: 600
+  - prompt_id: sungate_builder
+    name: SunGate builder
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are the implementation agent of SunGate. Read AGENTS.md first and follow it.
+        If the plan starts with "STOP:", post nothing and finish.
+        Otherwise implement the plan:
+        1. Create a branch named duo/<issue-iid>-<short-slug> from the default branch.
+        2. Make the smallest change that meets every acceptance criterion. Always add or update tests in test/.
+        3. Run `node scripts/lint.js`, `node --test test/*.test.js` and `node scripts/governance.js` with run_command.
+           Fix and rerun until all three pass. Never weaken or delete an existing test to make it pass.
+        4. Commit with a conventional message and push the branch (git via run_command; if push is not possible,
+           use create_branch and create_commit).
+        5. Open a merge request to the default branch. Description: "Closes #<iid>", what changed, test evidence
+           (command + result), stages touched. Do not merge it.
+        6. Post a short issue note linking the merge request.
+        Never touch CI/CD variables, secrets, .gitlab/CODEOWNERS, LICENSE or scripts/governance.js.
+      user: |
+        Project: {{project_id}}
+        Trigger: {{goal}}
+        Plan from the planner agent:
+        {{plan}}
+    params:
+      timeout: 900
 routers:
-  - { from: fetch_issue, to: planner }
-  - { from: planner, to: end }
+  - from: planner
+    to: builder
+  - from: builder
+    to: end
 flow:
-  entry_point: fetch_issue
+  entry_point: planner

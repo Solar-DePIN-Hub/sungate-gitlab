@@ -1,14 +1,96 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SunGate</title>
-<style>body{font-family:system-ui;background:#0b1020;color:#eef;max-width:760px;margin:auto;padding:24px}h1{color:#ffd34d}input,button{padding:8px;border-radius:8px;border:0;margin:4px}button{background:#ffd34d;font-weight:700;cursor:pointer}.bar{background:#ffd34d;height:10px;border-radius:4px;margin:2px 0}small{color:#9ab}</style>
-<h1>☀️ SunGate</h1>
-<p>Solar output forecast API. Every release of this app is reviewed, scanned, tested, deployed and monitored by GitLab Duo agents, and heavy CI runs only in low-carbon windows.</p>
-<label>lat <input id="lat" value="50.45" size="6"></label><label>lon <input id="lon" value="30.52" size="6"></label>
-<button onclick="go()">Forecast 24h</button>
-<div id="out"></div>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SunGate · carbon-aware path to production</title>
+<meta name="description" content="SunGate forecasts solar output and the next low-carbon grid window. Its own GitLab pipeline uses the same code to decide when heavy CI work runs.">
+<style>
+:root{--bg:#0b1020;--card:#141b33;--sun:#ffd34d;--leaf:#46d39a;--txt:#eef1ff;--mut:#9aa6c8}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+main{max-width:920px;margin:auto;padding:24px}
+h1{color:var(--sun);margin:.2em 0;font-size:2rem}h2{margin:.2em 0 .6em;font-size:1.15rem}
+p.lead{color:var(--mut);margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:var(--card);border-radius:14px;padding:16px}
+label{font-size:.85rem;color:var(--mut);margin-right:6px}
+input{width:6.5em;padding:6px 8px;border-radius:8px;border:1px solid #2a355e;background:#0e1430;color:var(--txt)}
+button{padding:8px 14px;border-radius:8px;border:0;background:var(--sun);font-weight:700;cursor:pointer;margin-top:8px}
+.big{font-size:1.6rem;font-weight:800}.ok{color:var(--leaf)}.mut{color:var(--mut);font-size:.85rem}
+.bars{display:flex;align-items:flex-end;gap:2px;height:90px;margin-top:10px}
+.bars div{flex:1;background:var(--sun);border-radius:2px 2px 0 0;min-height:1px}
+.bars.c div{background:#5b6b9a}.bars.c div.best{background:var(--leaf)}
+ol{padding-left:1.2em;color:var(--mut)}ol b{color:var(--txt)}
+a{color:var(--sun)}
+</style>
+</head>
+<body>
+<main>
+  <h1>☀️ SunGate</h1>
+  <p class="lead">Solar output forecast + the next low-carbon grid window. The same code decides when SunGate's own GitLab pipeline runs heavy jobs.</p>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="pv">
+      <h2 id="pv">Solar forecast (clear sky)</h2>
+      <label>lat <input id="lat" value="50.45" inputmode="decimal"></label>
+      <label>lon <input id="lon" value="30.52" inputmode="decimal"></label>
+      <label>panel m² <input id="area" value="1.6" inputmode="decimal"></label><br>
+      <button id="go">Forecast next 24h</button>
+      <div id="pvout" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="gw">
+      <h2 id="gw">Green window (GB grid)</h2>
+      <label>job length, min <input id="dur" value="60" inputmode="numeric"></label><br>
+      <button id="gwgo">Find cleanest hour</button>
+      <div id="gwout" aria-live="polite"></div>
+      <p class="mut">Data: National Grid ESO Carbon Intensity API (CC BY 4.0).</p>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:16px" aria-labelledby="how">
+    <h2 id="how">How this page reached you</h2>
+    <ol>
+      <li><b>Plan + create</b>: a GitLab Duo flow turns an issue into a plan, code, tests and a merge request.</li>
+      <li><b>Review + secure</b>: the MR Guardian flow reviews the diff and the security findings and fixes high risks.</li>
+      <li><b>Verify</b>: carbon gate, lint, tests, governance; the Pipeline Doctor flow repairs red pipelines.</li>
+      <li><b>Package + stage</b>: the container is built, scanned, then booted as ephemeral staging and smoke-tested.</li>
+      <li><b>Release</b>: the Release Captain flow posts a readiness report. A human clicks one button for production.</li>
+      <li><b>Monitor</b>: a scheduled probe checks this site; a failure becomes an incident issue with a rollback plan.</li>
+    </ol>
+    <p class="mut" id="sci"></p>
+  </section>
+</main>
+<script src="solar.js"></script>
+<script src="carbon.js"></script>
 <script>
-async function go(){const r=await fetch(`/api/forecast?lat=${lat.value}&lon=${lon.value}`);const d=await r.json();
-if(d.error){out.textContent=d.error;return}const m=Math.max(1,...d.hourly.map(h=>h.powerW));
-out.innerHTML=`<p><b>${d.energyWh} Wh</b> clear-sky for a ${d.areaM2} m² panel</p>`+d.hourly.map(h=>`<small>${h.time.slice(11,16)} UTC · ${h.powerW} W</small><div class="bar" style="width:${h.powerW/m*100}%"></div>`).join('')}
-go()
-</script></html>
+const $ = id => document.getElementById(id);
+function bars(values, cls, bestIdx) {
+  const m = Math.max(1, ...values);
+  return `<div class="bars ${cls||''}">` + values.map((v, i) => `<div class="${i===bestIdx?'best':''}" style="height:${(v/m*100).toFixed(1)}%" title="${v}"></div>`).join('') + '</div>';
+}
+function pv() {
+  const lat = Number($('lat').value), lon = Number($('lon').value), areaM2 = Number($('area').value);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !(areaM2 > 0)) { $('pvout').textContent = 'Enter lat -90..90, lon -180..180, area > 0'; return; }
+  const f = SunGateSolar.forecast({ lat, lon, areaM2, hours: 24 });
+  $('pvout').innerHTML = `<div class="big">${(f.energyWh/1000).toFixed(2)} kWh</div><div class="mut">next 24h, clear sky, ${f.areaM2} m² at 20% efficiency</div>` + bars(f.hourly.map(h => h.powerW));
+}
+async function gw() {
+  const durationMin = Math.max(30, Math.min(720, Number($('dur').value) || 60));
+  $('gwout').textContent = 'Loading grid forecast…';
+  try {
+    const slots = await SunGateCarbon.fetchForecast();
+    const w = SunGateCarbon.greenWindow(slots, { durationMin, horizonH: 24 });
+    const t = s => new Date(s).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const shown = slots.slice(0, 48); const bestIdx = shown.findIndex(s => s.from === w.best.start);
+    $('gwout').innerHTML = `<div class="big ok">${t(w.best.start)}</div>
+      <div class="mut">${w.best.avgGPerKWh} gCO₂e/kWh vs ${w.now.avgGPerKWh} now: <b class="ok">${w.savingPct}% less carbon</b> if you wait ${Math.round(w.waitMin/60)}h</div>` + bars(shown.map(s => s.gPerKWh), 'c', bestIdx);
+  } catch (e) { $('gwout').textContent = 'Grid data unavailable right now: ' + e.message; }
+}
+$('go').onclick = pv; $('gwgo').onclick = gw; pv(); gw();
+fetch('sci-report.json').then(r => r.ok ? r.json() : null).then(r => {
+  if (r && r.sci) $('sci').textContent = `Last pipeline: ${r.measured.pipelineMinutes} min, ${r.sci.SCI_g_per_run} gCO₂e (SCI). Running at the greenest window would emit ${r.greenest.SCI_g_per_run} g (${r.window24h.savingPct}% less).`;
+}).catch(() => {});
+</script>
+</body>
+</html>

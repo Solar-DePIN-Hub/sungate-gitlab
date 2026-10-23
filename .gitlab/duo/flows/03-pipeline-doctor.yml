@@ -1,29 +1,104 @@
-# VERIFY + CONFIGURE. Trigger: pipeline event (failed).
+# SunGate flow 03 - Pipeline Doctor (VERIFY + CONFIGURE + MONITOR incident path)
+# Trigger: Pipeline events (Failed). The goal is the pipeline webhook payload.
+# Triage agent classifies the failure; responder either fixes it (MR) or opens an incident issue.
 version: "v1"
 environment: ambient
 components:
-  - name: doctor
+  - name: triage
     type: AgentComponent
-    prompt_id: doctor_prompt
+    prompt_id: sungate_triage
     inputs:
       - "context:goal"
-      - { from: "context:project_id", as: project_id }
-    toolset: [get_pipeline_errors, get_job_logs, read_file, edit_file, run_command, create_merge_request, create_merge_request_note]
+      - from: "context:project_id"
+        as: project_id
+    toolset:
+      - get_pipeline_failing_jobs
+      - get_failing_bridge_jobs
+      - get_downstream_pipelines
+      - get_job_logs
+      - gitlab_merge_request_search
+      - list_issues
+      - read_file
+      - grep
+      - find_files
+  - name: responder
+    type: AgentComponent
+    prompt_id: sungate_responder
+    inputs:
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+      - from: "context:triage.final_answer"
+        as: diagnosis
+    toolset:
+      - get_job_logs
+      - read_file
+      - find_files
+      - grep
+      - edit_file
+      - create_file_with_contents
+      - run_command
+      - ci_linter
+      - create_branch
+      - create_commit
+      - create_merge_request
+      - create_merge_request_note
+      - list_issues
+      - create_issue
+      - create_issue_note
 prompts:
-  - prompt_id: doctor_prompt
-    name: SunGate pipeline doctor
+  - prompt_id: sungate_triage
+    name: SunGate pipeline triage
     unit_primitives: []
     prompt_template:
       system: |
-        A SunGate pipeline failed. The goal is the pipeline webhook payload.
-        - If job carbon-gate exited 3 (grid too dirty), do not "fix" code. Comment the SCI report and
-          tell the maintainer the next low-carbon window; heavy jobs are deferred on purpose.
-        - Else read failing job logs, find the root cause, push a minimal fix, rerun tests locally,
-          and open or update an MR titled "fix(ci): <cause>". Explain the cause in one paragraph.
-      user: "{{goal}}"
-      placeholder: history
-    params: { timeout: 600 }
+        A SunGate pipeline failed. Read AGENTS.md first. The goal is the pipeline webhook JSON
+        (object_attributes has id, ref, source, status; builds lists jobs).
+        Use get_pipeline_failing_jobs (and get_failing_bridge_jobs / get_downstream_pipelines for the
+        carbon-gated child pipeline "heavy") and get_job_logs to find the first real failure.
+        Classify it as exactly one of:
+        - INCIDENT: job monitor-production failed in a scheduled pipeline (production is down or slow).
+        - FIX: a code, test, lint, governance, Dockerfile or CI config error that a code change can fix.
+        - FLAKY: runner, network or registry problem; a retry is the right action.
+        - LOOP: the failing branch starts with duo/ and already has 2 or more commits titled "fix(ci):".
+        Final answer: the class, pipeline id, ref, failing job names, the key log lines (max 20),
+        and the root cause in one paragraph. Do not guess; quote the logs.
+      user: |
+        Project: {{project_id}}
+        Pipeline event: {{goal}}
+    params:
+      timeout: 600
+  - prompt_id: sungate_responder
+    name: SunGate pipeline responder
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You act on the diagnosis of a failed SunGate pipeline. Read AGENTS.md first.
+        INCIDENT: read the latest smoke-report.json evidence from the job log. If an open issue with label
+        incident::open already exists, add a note to it instead of opening a new one. Otherwise create an
+        issue titled "Incident: production check failed <UTC time>" with labels incident::open and
+        severity::2, containing: failing checks, status codes, latency, the last deployed commit,
+        a suspected cause, and the rollback steps from AGENTS.md. Never deploy or roll back yourself;
+        a human approves that.
+        FIX: on the failing MR branch, or on a new branch duo/fix-ci-<pipeline-id> from the failing ref,
+        make the smallest fix, validate .gitlab-ci.yml with ci_linter if you touched CI, run
+        `node scripts/lint.js && node --test test/*.test.js && node scripts/governance.js`, push one commit
+        "fix(ci): <cause>", and open (or comment on) a merge request explaining the cause in one paragraph.
+        FLAKY: post a note on the related merge request (if any) saying the failure is infrastructure
+        and should be retried; change no code.
+        LOOP: change nothing; post a note asking a human to take over.
+        Never edit CI/CD variables, secrets, CODEOWNERS, LICENSE or scripts/governance.js.
+      user: |
+        Project: {{project_id}}
+        Pipeline event: {{goal}}
+        Diagnosis:
+        {{diagnosis}}
+    params:
+      timeout: 900
 routers:
-  - { from: doctor, to: end }
+  - from: triage
+    to: responder
+  - from: responder
+    to: end
 flow:
-  entry_point: doctor
+  entry_point: triage

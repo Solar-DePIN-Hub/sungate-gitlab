@@ -1,1 +1,6 @@
-* @vadym-bilobrovets
+# Humans own the automation: changes to CI, flows, agent config and guardrails need the maintainer.
+* @solardepin
+/.gitlab-ci.yml @solardepin
+/.gitlab/ @solardepin
+/ci/ @solardepin
+/scripts/governance.js @solardepin

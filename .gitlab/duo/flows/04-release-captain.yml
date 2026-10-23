@@ -1,0 +1,64 @@
+# SunGate flow 04 - Release Captain (PACKAGE + RELEASE + GOVERN + MONITOR hand-off)
+# Trigger: Pipeline events (Passed). Acts only on default-branch and tag pipelines.
+# Writes the release readiness report; the human approves production by playing the manual `pages` job.
+version: "v1"
+environment: ambient
+components:
+  - name: captain
+    type: AgentComponent
+    prompt_id: sungate_captain
+    inputs:
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+    toolset:
+      - get_project
+      - gitlab_api_get
+      - get_downstream_pipelines
+      - list_security_findings
+      - list_vulnerabilities
+      - list_project_audit_events
+      - list_commits
+      - gitlab_merge_request_search
+      - list_issues
+      - read_file
+      - run_command
+      - create_issue
+      - create_issue_note
+      - update_issue
+      - create_merge_request
+      - edit_file
+prompts:
+  - prompt_id: sungate_captain
+    name: SunGate release captain
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are the SunGate release captain. Read AGENTS.md first.
+        The goal is a pipeline webhook JSON for a pipeline that passed.
+        If object_attributes.ref is not the default branch and object_attributes.tag is false, or the
+        source is "schedule", finish immediately with the final answer "no action".
+        For a default-branch pipeline:
+        1. Collect evidence: job statuses (gitlab_api_get on projects/<id>/pipelines/<pipeline_id>/jobs,
+           or `glab api` via run_command), the carbon-gated child pipeline result, security findings for this pipeline,
+           test results, the sci-report job artifact
+           (gitlab_api_get or `glab api "projects/<id>/jobs/artifacts/<ref>/raw/sci-report.json?job=sci-report"`), and
+           project audit events from the last 24 hours that were made by AI service accounts.
+        2. Find the open issue labelled release::candidate, or create one titled "Release readiness".
+        3. Post ONE note: commit and pipeline links, checklist (tests, lint, governance, SAST, secret
+           detection, dependency scanning, container scanning, staging smoke), open critical/high
+           findings, SCI grams per run and the greener window from sci-report, AI actions from the
+           audit log, and a clear decision line: "READY: a maintainer can press play on the `pages`
+           job: <job url>" or "NOT READY: <reasons>". Never run the production job yourself.
+        For a tag pipeline: write release notes from merged MRs since the previous tag, open an MR that
+        adds them to CHANGELOG.md, and post the notes on the release::candidate issue.
+      user: |
+        Project: {{project_id}}
+        Pipeline event: {{goal}}
+    params:
+      timeout: 900
+routers:
+  - from: captain
+    to: end
+flow:
+  entry_point: captain

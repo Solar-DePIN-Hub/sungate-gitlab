@@ -1,37 +1,98 @@
-# CREATE + SECURE + GOVERN. Trigger: merge request opened / reviewer assigned.
+# SunGate flow 02 - MR Guardian (CREATE review + SECURE + GOVERN)
+# Triggers: Merge request (Created), Assign reviewer, Mention.
+# Reviewer agent finds problems (code + GitLab security findings); remediator fixes high/critical ones and posts the verdict.
 version: "v1"
 environment: ambient
 components:
-  - name: fetch_mr
-    type: DeterministicStepComponent
-    tool_name: get_merge_request
-    inputs:
-      - { from: "context:project_id", as: project_id }
-      - { from: "context:goal", as: merge_request_iid }
-  - name: guardian
+  - name: reviewer
     type: AgentComponent
-    prompt_id: guardian_prompt
+    prompt_id: sungate_reviewer
     inputs:
-      - { from: "context:fetch_mr.tool_responses", as: mr }
-      - { from: "context:project_id", as: project_id }
-      - { from: "context:goal", as: merge_request_iid }
-    toolset: [list_merge_request_diffs, list_vulnerabilities, read_file, edit_file, run_command, create_merge_request_note]
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+    toolset:
+      - get_merge_request
+      - list_merge_request_diffs
+      - list_all_merge_request_notes
+      - list_security_findings
+      - get_security_finding_details
+      - list_vulnerabilities
+      - get_pipeline_failing_jobs
+      - get_job_logs
+      - read_file
+      - read_files
+      - find_files
+      - grep
+      - create_merge_request_diff_note
+  - name: remediator
+    type: AgentComponent
+    prompt_id: sungate_remediator
+    inputs:
+      - "context:goal"
+      - from: "context:project_id"
+        as: project_id
+      - from: "context:reviewer.final_answer"
+        as: findings
+    toolset:
+      - get_merge_request
+      - read_file
+      - find_files
+      - grep
+      - edit_file
+      - create_file_with_contents
+      - run_command
+      - create_commit
+      - create_merge_request_note
 prompts:
-  - prompt_id: guardian_prompt
-    name: SunGate MR guardian
+  - prompt_id: sungate_reviewer
+    name: SunGate MR reviewer
     unit_primitives: []
     prompt_template:
       system: |
-        You review merge requests for SunGate, a solar telemetry API.
-        Check: correctness, input validation on every query param, tests added, no secrets, MIT license kept.
-        Read SAST, secret-detection and dependency findings for this MR.
-        If a finding is high or critical, commit a fix to the MR branch and rerun tests.
-        Post one review note: Verdict (approve / changes needed), findings fixed, risks left, stages touched.
-      user: "MR {{merge_request_iid}} in project {{project_id}}: {{mr}}"
-      placeholder: history
-    params: { timeout: 600 }
+        You review merge requests for SunGate (Node.js 24 LTS, zero dependencies). Read AGENTS.md first.
+        The goal identifies the merge request (URL, IID, or a comment with "Context: {MergeRequest IID: N}").
+        Check, in this order:
+        1. Security: read the GitLab security findings for this MR's pipeline (SAST, Secret Detection,
+           Dependency Scanning, Container Scanning). Note severity and file/line.
+        2. Input validation: every query parameter in src/server.js must be range-checked and return 400 on bad input.
+        3. Tests: new behaviour has tests in test/; no test was weakened or deleted.
+        4. Governance: no edits to CI variables, CODEOWNERS, LICENSE, scripts/governance.js or flow toolsets
+           that add destructive tools.
+        5. Carbon: changes to .gitlab-ci.yml keep heavy jobs inside the carbon-gated child pipeline (ci/heavy.yml).
+        For each real problem, leave one inline diff note with a concrete fix.
+        Final answer: a list of findings, each with severity (critical/high/medium/low), file, line and the fix.
+        Write "NO FINDINGS" if there are none. Do not invent findings.
+      user: |
+        Project: {{project_id}}
+        Trigger: {{goal}}
+    params:
+      timeout: 600
+  - prompt_id: sungate_remediator
+    name: SunGate MR remediator
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You fix merge requests for SunGate. Read AGENTS.md first.
+        Use the reviewer findings below.
+        - For every critical or high finding: check out the MR source branch, apply the smallest safe fix,
+          run `node scripts/lint.js && node --test test/*.test.js && node scripts/governance.js`, and push one commit
+          "fix(guardian): <finding>" to the MR source branch. Never dismiss or downgrade a vulnerability.
+        - Medium and low findings: do not change code; list them for the author.
+        Then post ONE merge request note with these headings:
+        "Verdict" (approve / changes needed), "Fixed by Guardian", "Left for the author", "Security scan summary",
+        "Stages touched". Keep it short. You never merge; a human approves.
+      user: |
+        Project: {{project_id}}
+        Trigger: {{goal}}
+        Reviewer findings:
+        {{findings}}
+    params:
+      timeout: 900
 routers:
-  - { from: fetch_mr, to: guardian }
-  - { from: guardian, to: end }
+  - from: reviewer
+    to: remediator
+  - from: remediator
+    to: end
 flow:
-  entry_point: fetch_mr
+  entry_point: reviewer

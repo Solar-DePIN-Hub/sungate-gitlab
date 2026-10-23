@@ -1,16 +1,19 @@
 {
   "name": "sungate",
-  "version": "0.1.0",
-  "description": "SunGate: solar-aware release gate + solar telemetry API, shipped by GitLab Duo agents",
+  "version": "1.0.0",
+  "description": "SunGate: solar forecast API with a carbon-aware GitLab pipeline run by GitLab Duo flows",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "lint": "node scripts/lint.js",
-    "sci": "node scripts/sci.js",
-    "smoke": "node scripts/smoke.js"
+    "governance": "node scripts/governance.js",
+    "carbon-gate": "node scripts/carbon-gate.js",
+    "sci": "node scripts/sci-report.js",
+    "smoke": "node scripts/smoke.js",
+    "build-site": "node scripts/build-site.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "license": "MIT"
 }

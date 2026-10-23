@@ -1,5 +1,5 @@
 'use strict';
-// Pure solar math, no dependencies.
+// Pure solar math, no dependencies. Shared by the API and the static web UI.
 // Simple PV model: P = area * efficiency * irradiance * (1 - temp_loss)
 function pvPowerW({ areaM2, efficiency, irradianceWm2, cellTempC = 25 }) {
   for (const [k, v] of Object.entries({ areaM2, efficiency, irradianceWm2 })) {
@@ -40,4 +40,7 @@ function forecast({ lat, lon, areaM2 = 1.6, efficiency = 0.2, start = new Date()
   return { lat, lon, areaM2, efficiency, energyWh: +out.reduce((a, p) => a + p.powerW, 0).toFixed(1), hourly: out };
 }
 
-module.exports = { pvPowerW, clearSkyIrradiance, solarElevation, forecast };
+const api = { pvPowerW, clearSkyIrradiance, solarElevation, forecast };
+// Works in Node (API, tests) and in the browser (static GitLab Pages build) without a bundler.
+if (typeof module !== 'undefined' && module.exports) module.exports = api;
+else globalThis.SunGateSolar = api;

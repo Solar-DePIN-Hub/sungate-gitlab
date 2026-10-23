@@ -1,101 +1,175 @@
-# SunGate pipeline: covers verify, secure, package, release, configure, monitor, govern.
-# Duo Agent Platform flows (.gitlab/duo/flows) are triggered by issues, MRs, mentions and pipeline events.
-stages: [carbon, verify, secure, package, deploy, monitor, release]
+# SunGate pipeline: the post-code lifecycle, carbon-aware and run with GitLab Duo Agent Platform flows.
+#
+#  carbon  -> carbon-gate: live GB grid intensity, decides run/defer, generates the heavy child pipeline
+#  verify  -> lint, unit tests (JUnit + coverage), governance (AI guardrails as code)
+#  test    -> GitLab SAST, Secret Detection, Dependency Scanning (security templates use the `test` stage)
+#  package -> heavy: dynamic child pipeline (docker build -> container scanning -> ephemeral staging + smoke)
+#  report  -> measured SCI (Software Carbon Intensity) per pipeline run
+#  deploy  -> production on GitLab Pages (manual = the human gate), optional Google Cloud Run
+#  release -> GitLab Release on tags
+#  monitor -> scheduled probe of production; a failure triggers the Pipeline Doctor flow (incident path)
+#
+# Duo flows (.gitlab/duo/flows) react to issues, MRs and pipeline events; see docs/SETUP.md.
+
+stages: [carbon, verify, test, package, report, deploy, release, monitor]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_KIND == "monitor"
+      variables:
+        SAST_DISABLED: "true"
+        SECRET_DETECTION_DISABLED: "true"
+        DEPENDENCY_SCANNING_DISABLED: "true"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
 
 include:
   - template: Jobs/SAST.gitlab-ci.yml
   - template: Jobs/Secret-Detection.gitlab-ci.yml
   - template: Jobs/Dependency-Scanning.gitlab-ci.yml
-  - template: Jobs/Container-Scanning.gitlab-ci.yml
 
 variables:
-  NODE_IMAGE: node:20-alpine
-  CS_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  NODE_IMAGE: node:24-alpine
+  RUNNER_WATTS: "30"          # SCI assumption, see docs/SUSTAINABILITY.md
+  AST_ENABLE_MR_PIPELINES: "true"   # run GitLab security scanners in MR pipelines too
 
 default:
   image: $NODE_IMAGE
+  interruptible: true
+
+.not-monitor:
+  rules:
+    - if: $SCHEDULE_KIND == "monitor"
+      when: never
+    - when: on_success
 
 carbon-gate:
   stage: carbon
+  extends: .not-monitor
   script:
-    - node scripts/sci.js --gate
-  artifacts: { paths: [sci-report.json], expire_in: 30 days }
-  allow_failure: { exit_codes: 3 }   # exit 3 = "defer": Duo pipeline flow reschedules heavy jobs
+    - node scripts/carbon-gate.js
+  artifacts:
+    paths: [carbon-report.json, heavy.yml]
+    reports:
+      dotenv: carbon.env
+    expire_in: 30 days
 
 lint:
   stage: verify
-  script: [node scripts/lint.js]
+  extends: .not-monitor
+  needs: []
+  script:
+    - node scripts/lint.js
 
 test:
   stage: verify
-  script: [node --test --test-reporter=junit --test-reporter-destination=junit.xml test/]
-  artifacts: { reports: { junit: junit.xml }, when: always }
+  extends: .not-monitor
+  needs: []
+  script:
+    - node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit.xml --test-coverage-exclude="test/**" test/*.test.js
+  coverage: '/all files\s*\|\s*([\d.]+)/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
 
-governance-check:
+governance:
   stage: verify
+  extends: .not-monitor
+  needs: []
   script:
-    - test -f LICENSE && grep -q "MIT License" LICENSE
-    - test -f .gitlab/CODEOWNERS
-    - test -f .gitlab/duo/agent-config.yml
-    - echo "governance ok"
+    - node scripts/governance.js
+  artifacts:
+    when: always
+    paths: [governance-report.json]
 
-build-image:
+heavy:
   stage: package
-  image: docker:27
-  services: [docker:27-dind]
+  extends: .not-monitor
+  needs: [carbon-gate, lint, test, governance]
+  trigger:
+    include:
+      - artifact: heavy.yml
+        job: carbon-gate
+    strategy: depend
+
+sci-report:
+  stage: report
+  dependencies: [carbon-gate]
+  rules:
+    - if: $SCHEDULE_KIND == "monitor"
+      when: never
+    - when: always
   script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker build -t "$CS_IMAGE" .
-    - docker push "$CS_IMAGE"
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - node scripts/sci-report.js
+  artifacts:
+    when: always
+    paths: [sci-report.json]
+    reports:
+      metrics: metrics.txt
+    expire_in: 90 days
 
-container_scanning:
-  stage: secure
-  needs: [build-image]
+# Production = GitLab Pages. Supervised autonomy: agents get everything ready, a human presses play.
+pages:
+  stage: deploy
+  interruptible: false
+  dependencies: [sci-report]
+  script:
+    - node scripts/build-site.js
+    - rm -rf public && mv site public
+  artifacts:
+    paths: [public]
+  environment:
+    name: production
+    url: $CI_PAGES_URL
   rules:
+    - if: $SCHEDULE_KIND == "monitor"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
 
-deploy-staging:
+# Optional: Google Cloud Run (bonus). Runs only when GCP variables exist. See deploy/cloudrun.sh.
+cloudrun-deploy:
   stage: deploy
   image: google/cloud-sdk:slim
-  environment: { name: staging, url: $STAGING_URL }
-  script: [sh deploy/cloudrun.sh sungate-staging]
+  interruptible: false
+  needs: [heavy]
+  environment:
+    name: production-cloudrun
+    url: $PROD_URL
+  script:
+    - sh deploy/cloudrun.sh sungate
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GCP_PROJECT
-
-smoke-staging:
-  stage: monitor
-  needs: [deploy-staging]
-  variables: { APP_URL: $STAGING_URL }
-  script: [node scripts/smoke.js]
-  artifacts: { paths: [smoke-report.json], when: always }
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GCP_PROJECT
-
-deploy-production:
-  stage: deploy
-  image: google/cloud-sdk:slim
-  needs: [smoke-staging]
-  environment: { name: production, url: $PROD_URL }
-  script: [sh deploy/cloudrun.sh sungate]
-  when: manual          # Supervised autonomy: human approves the outcome
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GCP_PROJECT
-
-monitor-production:
-  stage: monitor
-  variables: { APP_URL: $PROD_URL }
-  script: [node scripts/smoke.js]
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"   # scheduled every 30 min; failure triggers incident flow
+    - if: $SCHEDULE_KIND == "monitor"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GCP_PROJECT && $GCP_SA_KEY
+      when: manual
+      allow_failure: true
 
 release:
   stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  script: [echo "Releasing $CI_COMMIT_TAG"]
+  image: registry.gitlab.com/gitlab-org/cli:latest   # glab handles the release keyword
+  script:
+    - echo "Releasing $CI_COMMIT_TAG"
   release:
     tag_name: $CI_COMMIT_TAG
-    description: CHANGELOG.md
+    name: SunGate $CI_COMMIT_TAG
+    description: ./CHANGELOG.md
   rules:
     - if: $CI_COMMIT_TAG
+
+# Scheduled every 30 min (pipeline schedule with SCHEDULE_KIND=monitor). Failure -> Pipeline Doctor flow -> incident issue.
+monitor-production:
+  stage: monitor
+  script:
+    - if [ -n "$PROD_URL" ]; then export APP_URL="$PROD_URL" SMOKE_MODE=api; else export APP_URL="$CI_PAGES_URL" SMOKE_MODE=static; fi
+    - node scripts/smoke.js
+  artifacts:
+    when: always
+    paths: [smoke-report.json]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_KIND == "monitor"

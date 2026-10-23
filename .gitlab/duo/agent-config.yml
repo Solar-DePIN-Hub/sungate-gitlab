@@ -1,7 +1,8 @@
-image: node:20-alpine
+# How SunGate's Duo flows execute in CI/CD. Uses the GitLab default flow image (it ships Node.js, git and glab).
 setup_script:
   - node --version
+  - node --test test/*.test.js > /dev/null 2>&1 && echo "baseline tests green" || echo "baseline tests red"
 network_policy:
   include_recommended_allowed: true
   allowed_domains:
-    - api.electricitymap.org
+    - api.carbonintensity.org.uk
