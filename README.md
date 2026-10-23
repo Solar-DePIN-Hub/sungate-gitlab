@@ -2,7 +2,7 @@
 
 **GitLab AI Hackathon "Transcend" (Life After Code) · Path A: Start Fresh · Autonomy level: Supervised**
 
-> Transcend Hackathon Showcase workspace for @solardepin (DevPost: davidbell1603). See the [onboarding issue](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/work_items/1).
+**Live:** https://showcase-e6d7ff.gitlab.io (GitLab Pages, environment `production`) · **Pipelines:** [gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/pipelines](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/pipelines)
 
 SunGate is a small API and web page for solar owners: it forecasts clear-sky solar output for any
 location and finds the next **low-carbon window** on the electricity grid (live GB grid data).
@@ -24,6 +24,17 @@ issue ──► [01 Issue→MR] plan + code + tests ──► MR ──► [02 M
                                                           │
                                   HUMAN presses ▶ pages (production) ─► scheduled monitor every 30 min
 ```
+
+## Proof it ran (23 October 2026, times UTC)
+
+| What happened | Evidence |
+|---|---|
+| Issue #4 "Add a tilt parameter" assigned to the **Issue to MR** flow at 08:58:00. The planner posted a plan, acceptance criteria and risk at 08:59:09 | [issue #4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/work_items/4) |
+| The builder opened MR !1 at 09:00:13 (code + 7 tests). The commit author is the flow's service account, `SunGate Issue to MR` | [MR !1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/merge_requests/1), commit [c37a7479](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/commit/c37a7479) |
+| **MR Guardian** requested as reviewer at 09:00:53. Verdict posted at 09:02:05: no critical/high findings. It flagged that the MR pipeline had failed without a failed job. That turned out to be a real CI bug in the child-pipeline rules, fixed in [b61a12e8](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/commit/b61a12e8) | [MR !1 notes](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/merge_requests/1) |
+| A human merged MR !1. **Release Captain** posted a readiness report (tests, findings, SCI, AI audit events, the manual production job) | [issue #2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/work_items/2) |
+| A deliberately broken push (`feat/hours-zero`, red `test` job). **Pipeline Doctor** diagnosed it, pushed fix commit [2a263c38](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/commit/2a263c38) (author `SunGate Pipeline Doctor`) and opened MR !2, whose pipeline went green. !2 stays open on purpose as a demo | [failed pipeline](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/pipelines/2980332381), [MR !2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/merge_requests/2) |
+| Production is a manual `pages` job. A schedule probes it every 30 minutes | [schedules](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/pipeline_schedules), [live site](https://showcase-e6d7ff.gitlab.io) |
 
 ## The 9 lifecycle stages
 
@@ -74,7 +85,7 @@ so the production site works as a static GitLab Pages site.
 ## Run locally
 
 ```
-node --test test/*.test.js     # 37 tests, offline (real grid data fixture)
+node --test test/*.test.js     # 40 tests, offline (real grid data fixture)
 node scripts/lint.js
 node scripts/governance.js
 node src/server.js             # http://localhost:8080
@@ -96,3 +107,6 @@ Production is the manual `pages` job.
 ## License
 
 MIT, see [LICENSE](LICENSE). Grid data: National Grid ESO Carbon Intensity API, CC BY 4.0.
+
+---
+Workspace note from the hackathon template: Transcend Hackathon Showcase workspace for @solardepin (DevPost: davidbell1603). See the [onboarding issue](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/work_items/1).

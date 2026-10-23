@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+- Fix: the GitLab Pages page loads `solar.js` and `carbon.js` as classic scripts in one global scope.
+  Both files declared a top-level `const api`, so the second script failed and the green-window card showed
+  "SunGateCarbon is not defined". The exports are now block-scoped.
+- New regression test `test/browser-bundle.test.js` runs both files in one shared VM context, like the browser does.
+- The production monitor (`scripts/smoke.js`, static mode) now runs the deployed scripts the same way, so a page
+  that returns 200 but cannot run fails the monitor.
+- The page has a tilt input (the `tilt` parameter added by the Issue to MR flow in MR !1), a deployed-commit line and evidence links.
+
 ## 1.0.0
 - Carbon-aware pipeline: carbon gate (advise/enforce), heavy work in a dynamic child pipeline,
   time-shifting with GitLab delayed jobs, measured SCI report per pipeline run.

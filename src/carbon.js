@@ -80,6 +80,10 @@ async function fetchForecast({ fetchImpl = globalThis.fetch, now = new Date(), t
   } finally { clearTimeout(t); }
 }
 
-const api = { parseSlots, greenWindow, decide, sci, fetchForecast, API };
-if (typeof module !== 'undefined' && module.exports) module.exports = api;
-else globalThis.SunGateCarbon = api;
+// Block scope: the browser loads solar.js and carbon.js as classic scripts in one global scope,
+// so a top-level `const api` in both files would collide ("Identifier 'api' has already been declared").
+{
+  const api = { parseSlots, greenWindow, decide, sci, fetchForecast, API };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else globalThis.SunGateCarbon = api;
+}
