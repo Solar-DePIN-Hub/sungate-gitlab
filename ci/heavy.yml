@@ -8,7 +8,14 @@ include:
 variables:
   CS_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
 
+# A child of a merge request pipeline inherits the MR context, where jobs without `rules`
+# are skipped (default `only: [branches, tags]`). Every job here therefore has explicit rules.
+.always:
+  rules:
+    - when: on_success
+
 build-image:
+  extends: .always
   stage: build
   image: docker:27
   services: [docker:27-dind]
@@ -33,6 +40,7 @@ container_scanning:
 
 # Ephemeral staging: boot the exact image we just built and scanned, then smoke-test it.
 staging-smoke:
+  extends: .always
   stage: staging
   needs:
     - job: build-image

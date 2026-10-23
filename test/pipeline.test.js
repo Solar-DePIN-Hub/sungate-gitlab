@@ -35,8 +35,23 @@ test('carbon gate enforce mode time-shifts heavy jobs with a delayed job', () =>
   assert.strictEqual(r.status, 0, r.stderr);
   const heavy = r.read('heavy.yml');
   assert.match(heavy, /stages: \[green-wait, build, test, staging\]/);
-  assert.match(heavy, /when: delayed\n  start_in: 795 minutes/);
+  assert.match(heavy, /- when: delayed\n      start_in: 795 minutes/);
   assert.match(heavy, /build-image:/, 'the real jobs still run, just later');
+});
+
+test('every heavy child job has explicit rules (MR-pipeline children skip jobs without rules)', () => {
+  const r = run('carbon-gate.js', { CI_PIPELINE_SOURCE: 'schedule', CARBON_MAX_WAIT_H: '14' });
+  const heavy = r.read('heavy.yml');
+  const jobs = heavy.split(/\n(?=[a-z][\w-]*:\s*\n)/).slice(1);
+  const names = jobs.map(j => j.split(':')[0]);
+  for (const name of ['build-image', 'container_scanning', 'staging-smoke', 'green-window-wait']) {
+    assert.ok(names.includes(name), `job ${name} exists`);
+  }
+  for (const j of jobs) {
+    const name = j.split(':')[0];
+    if (['stages', 'include', 'variables'].includes(name)) continue;
+    assert.match(j, /\n  (rules:|extends: \.always)/, `job ${name} needs rules`);
+  }
 });
 
 test('[urgent] commit overrides enforce mode', () => {

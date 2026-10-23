@@ -30,8 +30,9 @@ function heavyPipeline(deferred, report) {
 green-window-wait:
   stage: green-wait
   image: node:24-alpine
-  when: delayed
-  start_in: ${Math.max(1, report.window.waitMin)} minutes
+  rules:
+    - when: delayed
+      start_in: ${Math.max(1, report.window.waitMin)} minutes
   script:
     - echo "Heavy jobs time-shifted - ${reason}"
     - echo "Green window starts ${report.window.best.start} (${report.window.best.avgGPerKWh} gCO2e/kWh)"
