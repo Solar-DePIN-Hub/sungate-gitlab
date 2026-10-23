@@ -32,7 +32,8 @@ opens an MR, assign **SunGate MR Guardian** as reviewer to start the review.
 - Description: `SunGate production monitor`
 - Interval pattern: custom `*/30 * * * *`, timezone UTC
 - Target branch: `main`
-- Variable: `SCHEDULE_KIND` = `monitor`
+- Variable: `SCHEDULE_KIND` = `monitor` (needs Maintainer). With the Developer role, skip the variable:
+  any schedule whose description contains "monitor" runs in monitor mode.
 
 Optional nightly carbon-shifted build: a second schedule `0 1 * * *` with no variables.
 Scheduled pipelines use `enforce` mode, so heavy jobs wait for a greener window.

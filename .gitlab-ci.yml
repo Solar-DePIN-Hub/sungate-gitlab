@@ -15,8 +15,11 @@ stages: [carbon, verify, test, package, report, deploy, release, monitor]
 
 workflow:
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_KIND == "monitor"
+    # Monitor schedule: SCHEDULE_KIND=monitor, or a schedule whose description contains "monitor"
+    # (schedule variables need Maintainer; the description works for the Developer role too).
+    - if: $CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_KIND == "monitor" || $CI_PIPELINE_SCHEDULE_DESCRIPTION =~ /monitor/i)
       variables:
+        SCHEDULE_KIND: "monitor"
         SAST_DISABLED: "true"
         SECRET_DETECTION_DISABLED: "true"
         DEPENDENCY_SCANNING_DISABLED: "true"
