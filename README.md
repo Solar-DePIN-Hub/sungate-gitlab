@@ -61,16 +61,20 @@ Details and numbers: [docs/SUSTAINABILITY.md](docs/SUSTAINABILITY.md).
 
 ```
 GET /healthz
-GET /api/forecast?lat=50.45&lon=30.52&hours=24&area=1.6     # clear-sky PV forecast
+GET /api/forecast?lat=50.45&lon=30.52&hours=24&area=1.6&tilt=0   # clear-sky PV forecast
 GET /api/green-window?duration=60&horizon=24                 # cleanest window on the GB grid
 ```
+`tilt` is optional: the panel tilt from horizontal in degrees, 0..90 (default 0, a flat panel). The panel
+is assumed to face the equator (south in the northern hemisphere, north in the southern). A `tilt` that is
+not a number or is outside 0..90 returns HTTP 400.
+
 Invalid input returns HTTP 400. The web page runs the same `solar.js` and `carbon.js` in the browser,
 so the production site works as a static GitLab Pages site.
 
 ## Run locally
 
 ```
-node --test test/*.test.js     # 31 tests, offline (real grid data fixture)
+node --test test/*.test.js     # 37 tests, offline (real grid data fixture)
 node scripts/lint.js
 node scripts/governance.js
 node src/server.js             # http://localhost:8080

@@ -63,3 +63,21 @@ test('unknown path 404 and non-GET 405', () => withServer(okFetch, async (b) => 
   assert.strictEqual((await fetch(`${b}/nope`)).status, 404);
   assert.strictEqual((await fetch(`${b}/healthz`, { method: 'POST' })).status, 405);
 }));
+
+test('forecast tilt parameter', () => withServer(okFetch, async (b) => {
+  const get = async (q) => fetch(`${b}/api/forecast?lat=50&lon=30&hours=24${q}`);
+  for (const t of [0, 30, 90]) {
+    const r = await get(`&tilt=${t}`);
+    assert.strictEqual(r.status, 200, `tilt=${t}`);
+    assert.strictEqual((await r.json()).tilt, t);
+  }
+  for (const t of ['-1', '91', 'abc']) {
+    const r = await get(`&tilt=${t}`);
+    assert.strictEqual(r.status, 400, `tilt=${t}`);
+    assert.match((await r.json()).error, /tilt/);
+  }
+  const def = await (await get('')).json();
+  const zero = await (await get('&tilt=0')).json();
+  assert.deepStrictEqual(def.hourly, zero.hourly);
+  assert.strictEqual(def.energyWh, zero.energyWh);
+}));
