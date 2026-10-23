@@ -2,6 +2,8 @@
 
 **GitLab AI Hackathon "Transcend" (Life After Code) · Path A: Start Fresh · Autonomy level: Supervised**
 
+> Transcend Hackathon Showcase workspace for @solardepin (DevPost: davidbell1603). See the [onboarding issue](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43647382/showcase/-/work_items/1).
+
 SunGate is a small API and web page for solar owners: it forecasts clear-sky solar output for any
 location and finds the next **low-carbon window** on the electricity grid (live GB grid data).
 
