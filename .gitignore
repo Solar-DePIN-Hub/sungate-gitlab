@@ -3,7 +3,7 @@ junit.xml
 site
 carbon-report.json
 carbon.env
-heavy.yml
+/heavy.yml
 sci-report.json
 smoke-report.json
 governance-report.json
