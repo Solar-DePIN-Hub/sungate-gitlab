@@ -41,12 +41,14 @@ function createHandler({ fetchImpl = fetch, clock = () => new Date() } = {}) {
       const lon = num(url.searchParams.get('lon'), NaN);
       const hours = num(url.searchParams.get('hours'), 24);
       const areaM2 = num(url.searchParams.get('area'), 1.6);
+      const tilt = num(url.searchParams.get('tilt'), 0);
       if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
         return json(res, 400, { error: 'lat and lon are required: lat -90..90, lon -180..180' });
       }
       if (!Number.isInteger(hours) || hours < 1 || hours > 48) return json(res, 400, { error: 'hours must be an integer 1..48' });
       if (!(areaM2 > 0 && areaM2 <= 10000)) return json(res, 400, { error: 'area must be 0..10000 m2' });
-      return json(res, 200, forecast({ lat, lon, hours, areaM2 }));
+      if (!(tilt >= 0 && tilt <= 90)) return json(res, 400, { error: 'tilt must be a number 0..90 degrees' });
+      return json(res, 200, forecast({ lat, lon, hours, areaM2, tilt }));
     }
 
     if (url.pathname === '/api/green-window') {
